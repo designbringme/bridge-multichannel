@@ -1,0 +1,12 @@
+{
+  "name": "donation-bridge-multichannel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated multi-channel donation bridge for Roblox",
+  "main": "api/index.js",
+  "dependencies": {
+    "@upstash/redis": "^1.34.0",
+    "express": "^4.18.2"
+  },
+  "engines": { "node": ">=18" }
+}
