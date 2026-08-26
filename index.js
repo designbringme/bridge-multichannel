@@ -10,6 +10,7 @@ const redis = new Redis({
 });
 
 const MAX_AGE_SECONDS = 24 * 60 * 60;
+const DEDUP_EXPIRE_SECONDS = 60; // dedup window: 1 detik = 100ms, 60 detik = cukup cegah resend dari provider
 const MAX_ITEMS_PER_POLL = 100;
 const PLATFORM_NAMES = new Set(["saweria", "sociabuzz", "bagibagi", "tako"]);
 
@@ -93,8 +94,8 @@ function normalizeDonation(platform, body) {
 }
 
 function redisKey(channel) { return `donation-multichannel:v1:${channel}`; }
-function dedupeKey(channel, platform, providerId) {
-  return `donation-multichannel:v1:dedupe:${channel}:${platform}:${providerId}`;
+function dedupeKey(accountId, channel, platform, providerId) {
+  return `donation-multichannel:v1:dedupe:${accountId}:${channel}:${platform}:${providerId}`;
 }
 
 app.post("/api/webhook/:platform/:accountId", async (req, res) => {
@@ -107,10 +108,12 @@ app.post("/api/webhook/:platform/:accountId", async (req, res) => {
   if (!donation) return res.status(400).json({ ok: false, reason: "Invalid or zero-amount donation" });
 
   try {
-    // Provider transaction IDs make retries idempotent. Timestamp fallback is unique per request.
+    // Provider transaction IDs make retries idempotent. A browser/manual test
+    // without an ID gets a body hash, so use a short retry window rather than
+    // blocking an identical test forever.
     const providerId = donation.providerId || crypto.createHash("sha256").update(JSON.stringify(req.body)).digest("hex");
-    const dedupe = dedupeKey(account.channel, platform, providerId);
-    const first = await redis.set(dedupe, "1", { nx: true, ex: MAX_AGE_SECONDS });
+    const dedupe = dedupeKey(accountId, account.channel, platform, providerId);
+    const first = await redis.set(dedupe, "1", { nx: true, ex: donation.providerId ? MAX_AGE_SECONDS : DEDUP_EXPIRE_SECONDS });
     if (first !== "OK" && first !== true) return res.json({ ok: true, duplicate: true });
 
     const score = Date.now();
